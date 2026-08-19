@@ -86,3 +86,60 @@ func TestUpsertCallThenMarkRecordingProcessed(t *testing.T) {
 		t.Fatal("expected recording_processed to be true")
 	}
 }
+
+// add new test
+func TestUnprocessedRecordingsCanBeFoundAfterRestart(t *testing.T) {
+	s := testutil.NewStore(t)
+	eventID, callID, accountID := testutil.IDs(t, s)
+	ctx := context.Background()
+
+	evt := store.Event{
+		EventID:      eventID,
+		CallID:       callID,
+		AccountID:    accountID,
+		Status:       "completed",
+		DurationSec:  10,
+		RecordingURL: "https://example.com/a.wav",
+		Payload:      []byte(`{}`),
+	}
+
+	if err := s.UpsertCall(ctx, evt); err != nil {
+		t.Fatalf("UpsertCall: %v", err)
+	}
+
+	var processed bool
+	err := s.Pool().QueryRow(
+		ctx,
+		`SELECT recording_processed
+		 FROM calls
+		 WHERE call_id = $1`,
+		callID,
+	).Scan(&processed)
+	if err != nil {
+		t.Fatalf("check recording state: %v", err)
+	}
+
+	if processed {
+		t.Fatal("expected recording to remain unprocessed")
+	}
+
+	var recoveredCallID string
+	err = s.Pool().QueryRow(
+		ctx,
+		`SELECT call_id
+		 FROM calls
+		 WHERE recording_url IS NOT NULL
+		   AND recording_processed = FALSE
+		   AND account_id = $1
+		 LIMIT 1`,
+		accountID,
+	).Scan(&recoveredCallID)
+
+	if err != nil {
+		t.Fatalf("find unprocessed recording: %v", err)
+	}
+
+	if recoveredCallID != callID {
+		t.Fatalf("found call %q, want %q", recoveredCallID, callID)
+	}
+}
