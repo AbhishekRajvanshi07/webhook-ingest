@@ -7,13 +7,14 @@ CREATE TABLE IF NOT EXISTS events (
     received_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_event_id ON events (event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id
+ON events (event_id);
 
 CREATE TABLE IF NOT EXISTS calls (
     call_id             TEXT PRIMARY KEY,
     account_id          TEXT NOT NULL,
     status              TEXT NOT NULL,
-    duration_sec        INT  NOT NULL,
+    duration_sec        INT NOT NULL,
     recording_url       TEXT,
     recording_processed BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
