@@ -26,7 +26,7 @@ func TestInsertEventThenExists(t *testing.T) {
 		t.Fatal("expected event to be absent before insert")
 	}
 
-	if err := s.InsertEvent(ctx, evt); err != nil {
+	if _, err := s.InsertEvent(ctx, evt); err != nil {
 		t.Fatalf("InsertEvent: %v", err)
 	}
 
@@ -141,5 +141,41 @@ func TestUnprocessedRecordingsCanBeFoundAfterRestart(t *testing.T) {
 
 	if recoveredCallID != callID {
 		t.Fatalf("found call %q, want %q", recoveredCallID, callID)
+	}
+}
+
+func TestUnprocessedRecordingsCanBeDiscovered(t *testing.T) {
+	s := testutil.NewStore(t)
+	_, callID, accountID := testutil.IDs(t, s)
+	ctx := context.Background()
+
+	evt := store.Event{
+		CallID:       callID,
+		AccountID:    accountID,
+		Status:       "completed",
+		DurationSec:  10,
+		RecordingURL: "https://example.com/a.wav",
+	}
+
+	if err := s.UpsertCall(ctx, evt); err != nil {
+		t.Fatalf("UpsertCall: %v", err)
+	}
+
+	recordings, err := s.UnprocessedRecordings(ctx)
+	if err != nil {
+		t.Fatalf("UnprocessedRecordings: %v", err)
+	}
+
+	if len(recordings) != 1 {
+		t.Fatalf("found %d recordings, want 1", len(recordings))
+	}
+
+	if recordings[0].CallID != callID {
+		t.Fatalf("found call %q, want %q", recordings[0].CallID, callID)
+	}
+
+	if recordings[0].RecordingURL != evt.RecordingURL {
+		t.Fatalf("found recording URL %q, want %q",
+			recordings[0].RecordingURL, evt.RecordingURL)
 	}
 }

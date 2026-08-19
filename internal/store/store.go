@@ -73,12 +73,28 @@ func (s *Store) EventExists(ctx context.Context, eventID string) (bool, error) {
 }
 
 // InsertEvent stores the raw delivery.
-func (s *Store) InsertEvent(ctx context.Context, e Event) error {
-	_, err := s.pool.Exec(ctx,
+// It returns true when the event was inserted and false when it was
+// already present.
+func (s *Store) InsertEvent(ctx context.Context, e Event) (bool, error) {
+	var inserted bool
+
+	err := s.pool.QueryRow(ctx,
 		`INSERT INTO events (event_id, call_id, account_id, payload)
-		 VALUES ($1, $2, $3, $4)`,
-		e.EventID, e.CallID, e.AccountID, e.Payload)
-	return err
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (event_id) DO NOTHING
+		 RETURNING TRUE`,
+		e.EventID, e.CallID, e.AccountID, e.Payload,
+	).Scan(&inserted)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return inserted, nil
 }
 
 // UpsertCall creates or refreshes the call record for this event.
@@ -128,4 +144,34 @@ func (s *Store) AccountStats(ctx context.Context, accountID string) (Stats, erro
 		return Stats{}, err
 	}
 	return st, nil
+}
+
+// add new function
+// UnprocessedRecordings returns calls whose recordings have not been processed.
+func (s *Store) UnprocessedRecordings(ctx context.Context) ([]Event, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT call_id, account_id, recording_url
+		 FROM calls
+		 WHERE recording_url IS NOT NULL
+		   AND recording_processed = FALSE
+		 ORDER BY updated_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recordings []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.CallID, &e.AccountID, &e.RecordingURL); err != nil {
+			return nil, err
+		}
+		recordings = append(recordings, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return recordings, nil
 }
