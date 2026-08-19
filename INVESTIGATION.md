@@ -58,3 +58,58 @@ Add a test that simulates an application restart:
 5. Run the test before changing production code.
 
 The test result will determine whether the suspected restart/recovery defect actually exists.
+
+Investigation test
+→ Initial test execution failed during compilation.
+
+Failure
+→ Go import cycle in store_test.go.
+
+Cause
+→ Test file package declaration/import relationship was incorrect.
+
+Action
+→ Restore store_test.go to external package `store_test`.
+
+Expected result
+→ Test compiles and exercises the intended restart-persistence hypothesis.
+
+## Recording Processing After Application Restart
+
+### Hypothesis
+
+A webhook containing a recording URL is accepted and the recording is processed asynchronously.
+
+If the application stops before the asynchronous processing completes, the call remains in PostgreSQL with `recording_processed = FALSE`.
+
+The hypothesis is that the application may not recover these unfinished recordings after restart, which could leave them permanently unprocessed.
+
+### Initial Evidence
+
+The database schema contains durable `recording_processed` state.
+
+The service starts recording processing asynchronously from `Ingest()`.
+
+The current service startup path does not explicitly recover calls whose recordings remain unprocessed.
+
+### Investigation Test 1 — Durable Unprocessed Recording
+
+A test was added:
+
+`TestUnprocessedRecordingsCanBeFoundAfterRestart`
+
+The test:
+
+1. Creates a call with a recording URL.
+2. Persists the call without marking its recording as processed.
+3. Verifies that `recording_processed` remains `FALSE`.
+4. Queries PostgreSQL for unfinished recordings using the durable state.
+
+### First Attempt
+
+The first test execution could not reach the application logic because PostgreSQL was not running.
+
+Observed result:
+
+```text
+connect to postgres ... localhost:5432 ... connection refused
